@@ -75,7 +75,12 @@ def send_course_purchase_email(sender, order=None, **kwargs):  # pylint: disable
                 )
                 return
             elif product.get_product_class().name == 'Seat':
-                provider_data = get_provider_data(provider_id)
+                request = threadlocals.get_current_request()
+                provider_data = get_provider_data(
+                    access_token=request.user.access_token,
+                    provider_id=provider_id,
+                    site_configuration=request.site.siteconfiguration
+                )
                 if provider_data:
                     send_notification(
                         order.user,
@@ -88,7 +93,7 @@ def send_course_purchase_email(sender, order=None, **kwargs):  # pylint: disable
                             'credit_hours': product.attr.credit_hours,
                             'credit_provider': provider_data['display_name'],
                         },
-                        threadlocals.get_current_request().site
+                        request.site
                     )
 
         else:

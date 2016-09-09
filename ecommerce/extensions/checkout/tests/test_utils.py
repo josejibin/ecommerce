@@ -4,7 +4,6 @@ import mock
 import requests
 from requests import ConnectionError, Timeout
 
-from ecommerce.core.url_utils import get_lms_url
 from ecommerce.extensions.checkout.utils import get_provider_data
 from ecommerce.tests.testcases import TestCase
 
@@ -17,11 +16,16 @@ class UtilTests(TestCase):
         Check if correct data returns on the full filled request.
         """
         httpretty.register_uri(
-            httpretty.GET, get_lms_url('api/credit/v1/providers/ASU'),
+            httpretty.GET,
+            self.site.siteconfiguration.build_lms_url('api/credit/v1/providers/ASU/'),
             body='{"display_name": "Arizona State University"}',
             content_type="application/json"
         )
-        provider_data = get_provider_data('ASU')
+        provider_data = get_provider_data(
+            access_token=self.access_token,
+            provider_id='ASU',
+            site_configuration=self.site.siteconfiguration
+        )
         self.assertDictEqual(provider_data, {"display_name": "Arizona State University"})
 
     @httpretty.activate
@@ -30,14 +34,23 @@ class UtilTests(TestCase):
         Check if None return on the bad request
         """
         httpretty.register_uri(
-            httpretty.GET, get_lms_url('api/credit/v1/providers/ABC'),
+            httpretty.GET,
+            self.site.siteconfiguration.build_lms_url('api/credit/v1/providers/ABC/'),
             status=400
         )
-        provider_data = get_provider_data('ABC')
+        provider_data = get_provider_data(
+            access_token=self.access_token,
+            provider_id='ABC',
+            site_configuration=self.site.siteconfiguration
+        )
         self.assertEqual(provider_data, None)
 
     @ddt.data(ConnectionError, Timeout)
     def test_exceptions(self, exception):
         """ Verify the function returns None when a request exception is raised. """
         with mock.patch.object(requests, 'get', mock.Mock(side_effect=exception)):
-            self.assertIsNone(get_provider_data('ABC'))
+            self.assertIsNone(get_provider_data(
+                access_token=self.access_token,
+                provider_id='ABC',
+                site_configuration=self.site.siteconfiguration
+            ))
