@@ -1,8 +1,8 @@
+import json
+
 from django.conf import settings
 from django.core import mail
-from django.test import RequestFactory
 import httpretty
-import mock
 from oscar.test import factories
 from oscar.test.newfactories import BasketFactory
 from threadlocals.threadlocals import get_current_request
@@ -19,11 +19,9 @@ class SignalTests(CourseCatalogTestMixin, TestCase):
 
     def setUp(self):
         super(SignalTests, self).setUp()
-        self.request = RequestFactory()
         self.user = self.create_user()
-        self.request.user = self.user
         self.site_configuration = SiteConfigurationFactory(partner__name='Tester', from_email='from@example.com')
-        self.request.site = self.site_configuration.site
+        self.site = self.site_configuration.site
 
     @httpretty.activate
     def test_post_checkout_callback(self):
@@ -31,33 +29,37 @@ class SignalTests(CourseCatalogTestMixin, TestCase):
         When the post_checkout signal is emitted, the receiver should attempt
         to fulfill the newly-placed order and send receipt email.
         """
+        credit_provider_id = 'HGW'
+        credit_provider_name = 'Hogwarts'
+        body = {'display_name': credit_provider_name}
         httpretty.register_uri(
             httpretty.GET,
-            self.site_configuration.build_lms_url('api/credit/v1/providers/ASU/'),
-            body='{"display_name": "Arizona State University"}',
+            self.site_configuration.build_lms_url(
+                'api/credit/v1/providers/{credit_provider_id}/'.format(credit_provider_id=credit_provider_id)
+            ),
+            body=json.dumps(body),
             content_type='application/json'
         )
         toggle_switch('ENABLE_NOTIFICATIONS', True)
         course = Course.objects.create(id='edX/DemoX/Demo_Course', name='Demo Course')
-        seat = course.create_or_update_seat('credit', False, 50, self.partner, 'ASU', None, 2)
+        seat = course.create_or_update_seat('credit', False, 50, self.partner, credit_provider_id, None, 2)
 
         basket = BasketFactory()
         basket.add_product(seat, 1)
         order = factories.create_order(number=1, basket=basket, user=self.user)
-        with mock.patch('threadlocals.threadlocals.get_current_request') as mock_gcr:
-            mock_gcr.return_value = self.request
-            send_course_purchase_email(None, order=order)
+        order.site = self.site
+        send_course_purchase_email(None, user=self.user, order=order)
         self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].from_email, self.site_configuration.from_email)
+        self.assertEqual(mail.outbox[0].from_email, order.site.siteconfiguration.from_email)
         self.assertEqual(mail.outbox[0].subject, 'Order Receipt')
         self.assertEqual(
             mail.outbox[0].body,
             '\nPayment confirmation for: {course_title}'
             '\n\nDear {full_name},'
-            '\n\nThank you for purchasing {credit_hours} credit hours from {credit_provider} for {course_title}. '
+            '\n\nThank you for purchasing {credit_hours} credit hours from {credit_provider_name} for {course_title}. '
             'A charge will appear on your credit or debit card statement with a company name of "{platform_name}".'
-            '\n\nTo receive your course credit, you must also request credit at the {credit_provider} website. '
-            'For a link to request credit from {credit_provider}, or to see the status of your credit request, '
+            '\n\nTo receive your course credit, you must also request credit at the {credit_provider_name} website. '
+            'For a link to request credit from {credit_provider_name}, or to see the status of your credit request, '
             'go to your {platform_name} dashboard.'
             '\n\nTo explore other credit-eligible courses, visit the {platform_name} website. '
             'We add new courses frequently!'
@@ -70,7 +72,7 @@ class SignalTests(CourseCatalogTestMixin, TestCase):
                 course_title=order.lines.first().product.title,
                 full_name=self.user.get_full_name(),
                 credit_hours=2,
-                credit_provider='Arizona State University',
+                credit_provider_name=credit_provider_name,
                 platform_name=get_current_request().site.name,
                 receipt_url=self.site_configuration.build_lms_url(
                     '{}?orderNum={}'.format(settings.RECEIPT_PAGE_PATH, order.number)

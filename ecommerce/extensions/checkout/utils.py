@@ -8,13 +8,13 @@ from slumber.exceptions import SlumberHttpBaseException
 logger = logging.getLogger(__name__)
 
 
-def get_provider_data(access_token, provider_id, site_configuration):
-    """Get the provider information for provider id provider.
+def get_credit_provider_details(access_token, credit_provider_id, site_configuration):
+    """ Returns the credit provider details from LMS.
 
     Args:
-        access_token(str): JWT access token
-        provider_id(str): Identifier for the provider
-        site_configuration(SiteConfiguration): Ecommerce Site Configuration
+        access_token (str): JWT access token
+        credit_provider_id (str): Identifier for the provider
+        site_configuration (SiteConfiguration): Ecommerce Site Configuration
 
     Returns: dict
     """
@@ -22,11 +22,7 @@ def get_provider_data(access_token, provider_id, site_configuration):
         return EdxRestApiClient(
             site_configuration.build_lms_url('api/credit/v1/'),
             oauth_access_token=access_token
-        ).providers(provider_id).get()
-    except (ConnectionError, SlumberHttpBaseException, Timeout) as ex:
-        logger.exception(
-            'Failed to retrieve credit provider details for provider [%s], Because of [%s]',
-            provider_id,
-            ex,
-        )
+        ).providers(credit_provider_id).get()
+    except (ConnectionError, SlumberHttpBaseException, Timeout):
+        logger.exception('Failed to retrieve credit provider details for provider [%s].', credit_provider_id)
         return None
