@@ -5,14 +5,16 @@ from django.core import mail
 import httpretty
 from oscar.test import factories
 from oscar.test.newfactories import BasketFactory
-from threadlocals.threadlocals import get_current_request
+from testfixtures import LogCapture
 
 from ecommerce.core.tests import toggle_switch
-from ecommerce.courses.models import Course
+from ecommerce.courses.tests.factories import CourseFactory
 from ecommerce.extensions.catalogue.tests.mixins import CourseCatalogTestMixin
 from ecommerce.extensions.checkout.signals import send_course_purchase_email
 from ecommerce.tests.factories import SiteConfigurationFactory
 from ecommerce.tests.testcases import TestCase
+
+LOGGER_NAME = 'ecommerce.extensions.checkout.signals'
 
 
 class SignalTests(CourseCatalogTestMixin, TestCase):
@@ -22,6 +24,26 @@ class SignalTests(CourseCatalogTestMixin, TestCase):
         self.user = self.create_user()
         self.site_configuration = SiteConfigurationFactory(partner__name='Tester', from_email='from@example.com')
         self.site = self.site_configuration.site
+        toggle_switch('ENABLE_NOTIFICATIONS', True)
+
+    def prepare_order(self, seat_type, credit_provider_id=None):
+        """
+        Prepares order for post-checkout test.
+
+        Args:
+            seat_type (str): Course seat type
+            credit_provider_id (str): Credit provider associated with the course seat.
+
+        Returns:
+            Order
+        """
+        course = CourseFactory()
+        seat = course.create_or_update_seat(seat_type, False, 50, self.partner, credit_provider_id, None, 2)
+        basket = BasketFactory()
+        basket.add_product(seat, 1)
+        order = factories.create_order(number=1, basket=basket, user=self.user)
+        order.site = self.site
+        return order
 
     @httpretty.activate
     def test_post_checkout_callback(self):
@@ -40,14 +62,8 @@ class SignalTests(CourseCatalogTestMixin, TestCase):
             body=json.dumps(body),
             content_type='application/json'
         )
-        toggle_switch('ENABLE_NOTIFICATIONS', True)
-        course = Course.objects.create(id='edX/DemoX/Demo_Course', name='Demo Course')
-        seat = course.create_or_update_seat('credit', False, 50, self.partner, credit_provider_id, None, 2)
 
-        basket = BasketFactory()
-        basket.add_product(seat, 1)
-        order = factories.create_order(number=1, basket=basket, user=self.user)
-        order.site = self.site
+        order = self.prepare_order('credit', credit_provider_id=credit_provider_id)
         send_course_purchase_email(None, user=self.user, order=order)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].from_email, order.site.siteconfiguration.from_email)
@@ -73,9 +89,23 @@ class SignalTests(CourseCatalogTestMixin, TestCase):
                 full_name=self.user.get_full_name(),
                 credit_hours=2,
                 credit_provider_name=credit_provider_name,
-                platform_name=get_current_request().site.name,
+                platform_name=self.site.name,
                 receipt_url=self.site_configuration.build_lms_url(
                     '{}?orderNum={}'.format(settings.RECEIPT_PAGE_PATH, order.number)
                 )
             )
         )
+
+    def test_post_checkout_callback_no_credit_provider(self):
+        order = self.prepare_order('verified')
+        with LogCapture(LOGGER_NAME) as l:
+            send_course_purchase_email(None, user=self.user, order=order)
+            l.check(
+                (
+                    LOGGER_NAME,
+                    'ERROR',
+                    'Failed to send credit receipt notification. Credit seat product [{}] has not provider.'.format(
+                        order.lines.first().product.id
+                    )
+                )
+            )
