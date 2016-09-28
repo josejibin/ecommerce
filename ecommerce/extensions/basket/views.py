@@ -54,7 +54,10 @@ class BasketSingleItemView(View):
 
         # If the product is not an Enrollment Code, we check to see if the user is already
         # enrolled to prevent double-enrollment and/or accidental coupon usage
-        if product.get_product_class().name != ENROLLMENT_CODE_PRODUCT_CLASS_NAME:
+        print request.GET
+        print sku
+        print code
+        if product.get_product_class().name != ENROLLMENT_CODE_PRODUCT_CLASS_NAME and code:
             try:
                 if request.user.is_user_already_enrolled(request, product):
                     logger.warning(
