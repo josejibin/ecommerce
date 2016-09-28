@@ -250,7 +250,7 @@ define([
             });
 
             it('should call emptyOffer when a collection is empty.', function() {
-                spyOn(view, 'emptyOffer');
+                spyOn(view, 'emptyOffer').and.callThrough();
                 collection.empty = true;
                 view.render();
                 expect(view.emptyOffer).toHaveBeenCalled();

@@ -13,6 +13,7 @@ define([
             url: '/api/v2/vouchers/offers/',
 
             initialize: function() {
+                this.empty = false;
                 this.page = 1;
                 this.perPage = 6;
                 this.empty = false;
