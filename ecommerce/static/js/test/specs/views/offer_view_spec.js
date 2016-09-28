@@ -249,6 +249,12 @@ define([
                 expect(view.changePage).toHaveBeenCalled();
             });
 
+            it('should call emptyOffer when a collection is empty.', function() {
+                spyOn(view, 'emptyOffer');
+                collection.empty = true;
+                view.render();
+                expect(view.emptyOffer).toHaveBeenCalled();
+            });
         });
     }
 );

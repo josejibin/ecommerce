@@ -15,8 +15,17 @@ define([
             initialize: function() {
                 this.page = 1;
                 this.perPage = 6;
+                this.empty = false;
                 this.updateLimits();
                 this.on('update', this.updateNumberOfPages);
+            },
+
+            parse: function(response) {
+                this._super(response);
+                if (response.results.length === 0) {
+                    this.empty = true;
+                }
+                return response.results;
             },
 
             updateNumberOfPages: function() {
