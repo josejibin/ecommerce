@@ -25,6 +25,7 @@ define([
                 this._super(response);
                 if (response.results.length === 0) {
                     this.empty = true;
+                    return false;
                 }
                 return response.results;
             },
