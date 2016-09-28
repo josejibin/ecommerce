@@ -11,7 +11,6 @@ from ecommerce.core.tests import toggle_switch
 from ecommerce.courses.tests.factories import CourseFactory
 from ecommerce.extensions.catalogue.tests.mixins import CourseCatalogTestMixin
 from ecommerce.extensions.checkout.signals import send_course_purchase_email
-from ecommerce.tests.factories import SiteConfigurationFactory
 from ecommerce.tests.testcases import TestCase
 
 LOGGER_NAME = 'ecommerce.extensions.checkout.signals'
@@ -22,13 +21,11 @@ class SignalTests(CourseCatalogTestMixin, TestCase):
     def setUp(self):
         super(SignalTests, self).setUp()
         self.user = self.create_user()
-        self.site_configuration = SiteConfigurationFactory(partner__name='Tester', from_email='from@example.com')
-        self.site = self.site_configuration.site
         toggle_switch('ENABLE_NOTIFICATIONS', True)
 
     def prepare_order(self, seat_type, credit_provider_id=None):
         """
-        Prepares order for post-checkout test.
+        Prepares order for a post-checkout test.
 
         Args:
             seat_type (str): Course seat type
@@ -39,10 +36,9 @@ class SignalTests(CourseCatalogTestMixin, TestCase):
         """
         course = CourseFactory()
         seat = course.create_or_update_seat(seat_type, False, 50, self.partner, credit_provider_id, None, 2)
-        basket = BasketFactory()
+        basket = BasketFactory(site=self.site)
         basket.add_product(seat, 1)
-        order = factories.create_order(number=1, basket=basket, user=self.user)
-        order.site = self.site
+        order = factories.create_order(basket=basket, user=self.user)
         return order
 
     @httpretty.activate
@@ -56,7 +52,7 @@ class SignalTests(CourseCatalogTestMixin, TestCase):
         body = {'display_name': credit_provider_name}
         httpretty.register_uri(
             httpretty.GET,
-            self.site_configuration.build_lms_url(
+            self.site.siteconfiguration.build_lms_url(
                 'api/credit/v1/providers/{credit_provider_id}/'.format(credit_provider_id=credit_provider_id)
             ),
             body=json.dumps(body),
@@ -64,6 +60,7 @@ class SignalTests(CourseCatalogTestMixin, TestCase):
         )
 
         order = self.prepare_order('credit', credit_provider_id=credit_provider_id)
+        self.mock_access_token_response()
         send_course_purchase_email(None, user=self.user, order=order)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].from_email, order.site.siteconfiguration.from_email)
@@ -90,7 +87,7 @@ class SignalTests(CourseCatalogTestMixin, TestCase):
                 credit_hours=2,
                 credit_provider_name=credit_provider_name,
                 platform_name=self.site.name,
-                receipt_url=self.site_configuration.build_lms_url(
+                receipt_url=self.site.siteconfiguration.build_lms_url(
                     '{}?orderNum={}'.format(settings.RECEIPT_PAGE_PATH, order.number)
                 )
             )
